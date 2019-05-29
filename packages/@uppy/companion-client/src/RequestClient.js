@@ -12,6 +12,8 @@ module.exports = class RequestClient {
     this.uppy = uppy
     this.opts = opts
     this.onReceiveResponse = this.onReceiveResponse.bind(this)
+    this.allowedHeaders = []
+    this.preflightDone = false
   }
 
   get hostname () {
@@ -23,12 +25,15 @@ module.exports = class RequestClient {
   get defaultHeaders () {
     return {
       'Accept': 'application/json',
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      'Uppy-Versions': '@uppy/companion-client=1.0.3'
     }
   }
 
   headers () {
-    return Promise.resolve(Object.assign({}, this.defaultHeaders, this.opts.serverHeaders || {}))
+    return Promise.resolve(
+      Object.assign({}, this.defaultHeaders, this.opts.serverHeaders || {})
+    )
   }
 
   _getPostResponseFunc (skip) {
@@ -75,9 +80,48 @@ module.exports = class RequestClient {
     return res.json()
   }
 
+  preflight (path) {
+    return new Promise((resolve, reject) => {
+      if (this.preflightDone) {
+        return resolve(this.allowedHeaders.slice())
+      }
+
+      fetch(this._getUrl(path), {
+        method: 'OPTIONS'
+      })
+        .then((response) => {
+          if (response.headers.has('access-control-allow-headers')) {
+            const allowedHeaders = response.headers.get('access-control-allow-headers')
+              .split(',').map((headerName) => headerName.trim().toLowerCase())
+            this.allowedHeaders = this.allowedHeaders.concat(allowedHeaders)
+          }
+          this.preflightDone = true
+          resolve(this.allowedHeaders.slice())
+        })
+        .catch(reject)
+    })
+  }
+
+  preflightAndHeaders (path) {
+    return new Promise((resolve, reject) => {
+      this.preflight(path).then((allowedHeaders) => {
+        this.headers().then((headers) => {
+          // filter to keep only allowed Headers
+          Object.keys(headers).forEach((header) => {
+            if (allowedHeaders.indexOf(header.toLowerCase()) === -1) {
+              delete headers[header]
+            }
+          })
+
+          resolve(headers)
+        })
+      }).catch(reject)
+    })
+  }
+
   get (path, skipPostResponse) {
     return new Promise((resolve, reject) => {
-      this.headers().then((headers) => {
+      this.preflightAndHeaders(path).then((headers) => {
         fetch(this._getUrl(path), {
           method: 'get',
           headers: headers,
@@ -95,7 +139,7 @@ module.exports = class RequestClient {
 
   post (path, data, skipPostResponse) {
     return new Promise((resolve, reject) => {
-      this.headers().then((headers) => {
+      this.preflightAndHeaders(path).then((headers) => {
         fetch(this._getUrl(path), {
           method: 'post',
           headers: headers,
@@ -114,7 +158,7 @@ module.exports = class RequestClient {
 
   delete (path, data, skipPostResponse) {
     return new Promise((resolve, reject) => {
-      this.headers().then((headers) => {
+      this.preflightAndHeaders(path).then((headers) => {
         fetch(`${this.hostname}/${path}`, {
           method: 'delete',
           headers: headers,

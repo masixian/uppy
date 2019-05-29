@@ -7,7 +7,7 @@ var authServer = express()
 authServer.use(session({ secret: 'grant', resave: true, saveUninitialized: true }))
 authServer.all('/drive/send-token', (req, res, next) => {
   req.session.grant = {
-    state: 'non-empty-value' }
+    state: req.query.state || 'non-empty-value' }
   next()
 })
 
