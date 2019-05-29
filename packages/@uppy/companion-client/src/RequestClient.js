@@ -12,7 +12,7 @@ module.exports = class RequestClient {
     this.uppy = uppy
     this.opts = opts
     this.onReceiveResponse = this.onReceiveResponse.bind(this)
-    this.allowedHeaders = []
+    this.allowedHeaders = ['accept', 'content-type']
     this.preflightDone = false
   }
 
@@ -91,9 +91,8 @@ module.exports = class RequestClient {
       })
         .then((response) => {
           if (response.headers.has('access-control-allow-headers')) {
-            const allowedHeaders = response.headers.get('access-control-allow-headers')
+            this.allowedHeaders = response.headers.get('access-control-allow-headers')
               .split(',').map((headerName) => headerName.trim().toLowerCase())
-            this.allowedHeaders = this.allowedHeaders.concat(allowedHeaders)
           }
           this.preflightDone = true
           resolve(this.allowedHeaders.slice())
